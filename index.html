@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>四象限 · 任务管理</title>
+  <style>
+    :root {
+      --bg: #080808;
+      --bg2: #111;
+      --gold: #c9a84c;
+      --gold-light: #f0d060;
+      --gold-dark: #8b6914;
+      --gold-glow: rgba(201,168,76,0.15);
+      --text: #e8e0d0;
+      --text-dim: #7a7060;
+      --q1: #ff6b4a;
+      --q2: #4a9eff;
+      --q3: #ffd700;
+      --q4: #777;
+      --card-bg: rgba(255,255,255,0.03);
+      --border: rgba(201,168,76,0.18);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(201,168,76,0.06) 0%, transparent 100%);
+      flex-shrink: 0;
+    }
+    .header-left { display: flex; flex-direction: column; gap: 2px; }
+    .header-title {
+      font-size: 17px; font-weight: 700; letter-spacing: 4px;
+      background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .header-date { font-size: 11px; color: var(--text-dim); letter-spacing: 0.5px; }
+    .history-btn {
+      background: transparent; border: 1px solid var(--border); color: var(--gold);
+      padding: 6px 14px; border-radius: 20px; font-size: 12px; cursor: pointer;
+      transition: all 0.2s; letter-spacing: 0.5px;
+    }
+    .history-btn:hover { background: var(--gold-glow); border-color: var(--gold); }
+
+    /* ── GRID ── */
+    .grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      min-height: 0;
+    }
+
+    /* center cross */
+    .grid-cross {
+      position: absolute;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .grid-wrapper {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── QUADRANT ── */
+    .quadrant {
+      border: 0.5px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden; position: relative;
+      transition: background 0.15s;
+      min-height: 0;
+    }
+    .quadrant:hover { background: rgba(201,168,76,0.015); }
+    .quadrant.drag-over { background: rgba(201,168,76,0.07); outline: 1px solid var(--gold-dark) inset; }
+
+    /* decorative glow line */
+    .quadrant::before {
+      content: ''; position: absolute;
+      left: 10%; right: 10%;
+      height: 1px; bottom: 28%;
+      background: linear-gradient(90deg, transparent, var(--gold-dark), transparent);
+      opacity: 0.25; pointer-events: none;
+    }
+
+    .q-header { padding: 12px 14px 6px; flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; }
+    .q-header-left { flex: 1; }
+    .q-label { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 3px; }
+    .q-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .q-tagline { font-size: 12px; color: var(--text-dim); }
+
+    .q-tasks {
+      flex: 1; overflow-y: auto; padding: 4px 10px 4px;
+      scrollbar-width: thin; scrollbar-color: var(--gold-dark) transparent; min-height: 0;
+    }
+    .q-tasks::-webkit-scrollbar { width: 3px; }
+    .q-tasks::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+
+    .q-add-btn {
+      margin: 4px 10px 10px; padding: 6px 8px;
+      background: transparent; border: 1px dashed rgba(201,168,76,0.25);
+      color: var(--text-dim); border-radius: 6px; font-size: 11px;
+      cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 4px;
+      flex-shrink: 0;
+    }
+    .q-add-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+    /* ── TASK CARD ── */
+    .task-card {
+      background: var(--card-bg); border: 1px solid rgba(201,168,76,0.08);
+      border-radius: 7px; padding: 9px 10px; margin-bottom: 5px;
+      cursor: grab; transition: all 0.15s; user-select: none;
+    }
+    .task-card:hover { border-color: rgba(201,168,76,0.28); background: rgba(255,255,255,0.05); }
+    .task-card:active { cursor: grabbing; }
+    .task-card.dragging { opacity: 0.4; }
+    .task-card.completed { opacity: 0.38; }
+    .task-card.completed .task-title { text-decoration: line-through; color: var(--text-dim); }
+
+    .task-top { display: flex; align-items: flex-start; gap: 7px; }
+    .task-check {
+      width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--text-dim);
+      flex-shrink: 0; cursor: pointer; margin-top: 1px; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .task-check.checked { background: var(--gold); border-color: var(--gold); }
+    .task-check.checked::after { content: '✓'; font-size: 9px; color: var(--bg); font-weight: 700; }
+    .task-title { font-size: 12px; flex: 1; line-height: 1.45; word-break: break-all; }
+    .task-del {
+      opacity: 0; background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 15px; padding: 0 1px; transition: all 0.15s; flex-shrink: 0; line-height: 1;
+    }
+    .task-card:hover .task-del { opacity: 1; }
+    .task-del:hover { color: #f06060; }
+
+    .task-desc { font-size: 10px; color: var(--text-dim); margin: 4px 0 0 22px; line-height: 1.4; }
+    .task-due {
+      font-size: 10px; margin: 4px 0 0 22px; padding: 2px 7px;
+      border-radius: 10px; display: inline-block;
+    }
+    .task-due.ok   { color: var(--gold); background: rgba(201,168,76,0.1); }
+    .task-due.soon { color: #ffaa44; background: rgba(255,170,68,0.12); }
+    .task-due.now  { color: #ff6b4a; background: rgba(255,107,74,0.15); }
+    .task-due.over { color: #ff4444; background: rgba(255,68,68,0.15); }
+
+    /* ── MODALS ── */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.82);
+      backdrop-filter: blur(5px); z-index: 100;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal {
+      background: #131313; border: 1px solid var(--border); border-radius: 16px;
+      padding: 22px; width: 100%; max-width: 420px;
+      box-shadow: 0 0 50px rgba(201,168,76,0.12);
+    }
+    .modal-title { font-size: 15px; font-weight: 600; color: var(--gold-light); margin-bottom: 18px; letter-spacing: 1px; }
+
+    .form-group { margin-bottom: 14px; }
+    .form-label { font-size: 11px; color: var(--text-dim); margin-bottom: 5px; display: block; letter-spacing: 0.5px; }
+    .form-input, .form-textarea, .form-select {
+      width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); padding: 9px 12px;
+      font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.2s;
+    }
+    .form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--gold); }
+    .form-textarea { resize: vertical; min-height: 72px; }
+    .form-select option { background: #1a1a1a; }
+
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .btn-primary {
+      flex: 1; background: linear-gradient(135deg, var(--gold-dark), var(--gold));
+      border: none; border-radius: 8px; color: #0a0a0a;
+      padding: 10px; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.2s;
+    }
+    .btn-primary:hover { opacity: 0.82; }
+    .btn-cancel {
+      flex: 1; background: transparent; border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text-dim); padding: 10px; font-size: 13px; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-cancel:hover { border-color: var(--gold); color: var(--gold); }
+
+    /* zoom modal */
+    .zoom-modal {
+      background: #0e0e0e; border: 1px solid var(--border); border-radius: 16px;
+      width: 100%; max-width: 500px; max-height: 85dvh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 0 60px rgba(201,168,76,0.13);
+    }
+    .zoom-head {
+      padding: 18px 18px 12px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0;
+    }
+    .zoom-close { background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer; transition: color 0.2s; line-height: 1; }
+    .zoom-close:hover { color: var(--text); }
+    .zoom-tasks { flex: 1; overflow-y: auto; padding: 14px 16px; }
+    .zoom-add { margin: 0 16px 14px; padding: 8px; background: transparent; border: 1px dashed rgba(201,168,76,0.3); color: var(--text-dim); border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 5px; flex-shrink: 0; }
+    .zoom-add:hover { border-color: var(--gold); color: var(--gold); }
+    .zoom-empty { text-align: center; color: var(--text-dim); font-size: 13px; padding: 32px 0; }
+
+    /* history modal */
+    .hist-modal {
+      background: #0e0e0e; border: 1px solid var(--border); border-radius: 16px;
+      width: 100%; max-width: 540px; max-height: 85dvh; display: flex; flex-direction: column;
+    }
+    .hist-head { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .hist-body { flex: 1; overflow-y: auto; padding: 14px 18px; }
+    .hist-day { margin-bottom: 20px; }
+    .hist-day-label { font-size: 11px; color: var(--gold); letter-spacing: 1.5px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    .hist-item { padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 5px; border-left: 2px solid var(--gold-dark); }
+    .hist-item-title { font-size: 12px; color: var(--text); }
+    .hist-item-meta { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+    .hist-empty { text-align: center; color: var(--text-dim); font-size: 13px; padding: 40px 0; }
+
+    /* toast */
+    .toast {
+      position: fixed; top: 16px; right: 16px; z-index: 200;
+      background: #1c1c1c; border: 1px solid var(--gold);
+      border-radius: 12px; padding: 12px 16px; max-width: 280px;
+      box-shadow: 0 0 20px rgba(201,168,76,0.2);
+      animation: toastIn 0.25s ease;
+    }
+    .toast-t { font-size: 12px; font-weight: 600; color: var(--gold); margin-bottom: 3px; }
+    .toast-b { font-size: 11px; color: var(--text-dim); }
+    @keyframes toastIn { from { transform: translateX(16px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* ── MOBILE ── */
+    @media (max-width: 640px) {
+      body { overflow: auto; height: auto; }
+      .grid { display: flex; flex-direction: column; flex: none; }
+      .quadrant { min-height: 220px; border-left: none; border-right: none; }
+      .quadrant::before { display: none; }
+      .q-expand { display: flex !important; }
+    }
+    .q-expand {
+      display: none;
+      background: none; border: 1px solid var(--border); color: var(--text-dim);
+      width: 26px; height: 26px; border-radius: 6px; font-size: 13px;
+      cursor: pointer; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s;
+    }
+    .q-expand:hover { border-color: var(--gold); color: var(--gold); }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-title">四 象 限</div>
+    <div class="header-date" id="hDate"></div>
+  </div>
+  <button class="history-btn" id="histBtn">历史记录</button>
+</div>
+
+<div class="grid-wrapper" style="flex:1;min-height:0;display:flex;flex-direction:column">
+  <div class="grid" id="grid">
+    <!-- Q1 重要·紧急 -->
+    <div class="quadrant" id="q1"
+         ondragover="dragOver(event,1)" ondrop="drop(event,1)" ondragleave="dragLeave(event)">
+      <div class="q-header">
+        <div class="q-header-left">
+          <div class="q-label">
+            <div class="q-dot" style="background:var(--q1);box-shadow:0 0 5px var(--q1)"></div>
+            <span style="color:var(--q1)">重要 · 紧急</span>
+          </div>
+          <div class="q-tagline">今天就干，不能拖</div>
+        </div>
+        <button class="q-expand" onclick="openZoom(1)">⤢</button>
+      </div>
+      <div class="q-tasks" id="t1" onclick="stopProp(event)"></div>
+      <button class="q-add-btn" onclick="openAdd(1)">＋ 添加任务</button>
+    </div>
+
+    <!-- Q2 重要·不紧急 -->
+    <div class="quadrant" id="q2"
+         ondragover="dragOver(event,2)" ondrop="drop(event,2)" ondragleave="dragLeave(event)">
+      <div class="q-header">
+        <div class="q-header-left">
+          <div class="q-label">
+            <div class="q-dot" style="background:var(--q2);box-shadow:0 0 5px var(--q2)"></div>
+            <span style="color:var(--q2)">重要 · 不紧急</span>
+          </div>
+          <div class="q-tagline">排期规划，持续推进</div>
+        </div>
+        <button class="q-expand" onclick="openZoom(2)">⤢</button>
+      </div>
+      <div class="q-tasks" id="t2" onclick="stopProp(event)"></div>
+      <button class="q-add-btn" onclick="openAdd(2)">＋ 添加任务</button>
+    </div>
+
+    <!-- Q3 不重要·紧急 -->
+    <div class="quadrant" id="q3"
+         ondragover="dragOver(event,3)" ondrop="drop(event,3)" ondragleave="dragLeave(event)">
+      <div class="q-header">
+        <div class="q-header-left">
+          <div class="q-label">
+            <div class="q-dot" style="background:var(--q3);box-shadow:0 0 5px var(--q3)"></div>
+            <span style="color:var(--q3)">不重要 · 紧急</span>
+          </div>
+          <div class="q-tagline">能委托就委托</div>
+        </div>
+        <button class="q-expand" onclick="openZoom(3)">⤢</button>
+      </div>
+      <div class="q-tasks" id="t3" onclick="stopProp(event)"></div>
+      <button class="q-add-btn" onclick="openAdd(3)">＋ 添加任务</button>
+    </div>
+
+    <!-- Q4 不重要·不紧急 -->
+    <div class="quadrant" id="q4"
+         ondragover="dragOver(event,4)" ondrop="drop(event,4)" ondragleave="dragLeave(event)">
+      <div class="q-header">
+        <div class="q-header-left">
+          <div class="q-label">
+            <div class="q-dot" style="background:var(--q4)"></div>
+            <span style="color:var(--q4)">不重要 · 不紧急</span>
+          </div>
+          <div class="q-tagline">放在最后或砍掉</div>
+        </div>
+        <button class="q-expand" onclick="openZoom(4)">⤢</button>
+      </div>
+      <div class="q-tasks" id="t4" onclick="stopProp(event)"></div>
+      <button class="q-add-btn" onclick="openAdd(4)">＋ 添加任务</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="overlay" id="addOverlay" style="display:none" onclick="closeAdd()">
+  <div class="modal" onclick="stopProp(event)">
+    <div class="modal-title" id="addTitle">添加任务</div>
+    <div class="form-group">
+      <label class="form-label">标题 *</label>
+      <input class="form-input" id="fTitle" placeholder="输入任务标题…" maxlength="60">
+    </div>
+    <div class="form-group">
+      <label class="form-label">描述（选填）</label>
+      <textarea class="form-textarea" id="fDesc" placeholder="补充说明…"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">截止时间（选填）</label>
+      <input class="form-input" type="datetime-local" id="fDue">
+    </div>
+    <div class="form-group">
+      <label class="form-label">象限</label>
+      <select class="form-select" id="fQ">
+        <option value="1">重要 · 紧急</option>
+        <option value="2">重要 · 不紧急</option>
+        <option value="3">不重要 · 紧急</option>
+        <option value="4">不重要 · 不紧急</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAdd()">取消</button>
+      <button class="btn-primary" onclick="saveTask()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Zoom Modal -->
+<div class="overlay" id="zoomOverlay" style="display:none" onclick="closeZoom()">
+  <div class="zoom-modal" onclick="stopProp(event)">
+    <div class="zoom-head">
+      <div>
+        <div class="q-label" id="zLabel"></div>
+        <div class="q-tagline" id="zTagline" style="margin-top:4px"></div>
+      </div>
+      <button class="zoom-close" onclick="closeZoom()">✕</button>
+    </div>
+    <div class="zoom-tasks" id="zTasks"></div>
+    <button class="zoom-add" id="zAddBtn">＋ 添加任务</button>
+  </div>
+</div>
+
+<!-- History Modal -->
+<div class="overlay" id="histOverlay" style="display:none" onclick="closeHist()">
+  <div class="hist-modal" onclick="stopProp(event)">
+    <div class="hist-head">
+      <div class="modal-title" style="margin:0">历史归档</div>
+      <button class="zoom-close" onclick="closeHist()">✕</button>
+    </div>
+    <div class="hist-body" id="histBody"></div>
+  </div>
+</div>
+
+<script>
+// ── CONSTANTS ──
+const TASKS_KEY   = 'sz4_tasks';
+const ARCH_KEY    = 'sz4_archive';
+const LAST_D_KEY  = 'sz4_lastdate';
+
+const QMETA = {
+  1: { label:'重要 · 紧急',   tag:'今天就干，不能拖',   color:'var(--q1)' },
+  2: { label:'重要 · 不紧急', tag:'排期规划，持续推进', color:'var(--q2)' },
+  3: { label:'不重要 · 紧急', tag:'能委托就委托',       color:'var(--q3)' },
+  4: { label:'不重要 · 不紧急',tag:'放在最后或砍掉',   color:'var(--q4)' },
+};
+
+// ── STATE ──
+let tasks = [];
+let editId = null;
+let zoomQ  = null;
+let dragId = null;
+
+// ── INIT ──
+function init() {
+  tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
+  tickDate();
+  doArchiveCheck();
+  renderAll();
+  askNotifyPerm();
+  setInterval(checkDeadlines, 60000);
+  setInterval(midnightCheck, 60000);
+  checkDeadlines();
+}
+
+function tickDate() {
+  const d = new Date();
+  const wd = ['日','一','二','三','四','五','六'][d.getDay()];
+  document.getElementById('hDate').textContent =
+    `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 · 周${wd}`;
+}
+
+// ── ARCHIVE ──
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+}
+
+function doArchiveCheck() {
+  const last = localStorage.getItem(LAST_D_KEY);
+  const today = todayStr();
+  if (last && last !== today) archiveDone(last);
+  localStorage.setItem(LAST_D_KEY, today);
+}
+
+function archiveDone(dateStr) {
+  const done = tasks.filter(t => t.done);
+  if (!done.length) return;
+  const arc = JSON.parse(localStorage.getItem(ARCH_KEY) || '{}');
+  arc[dateStr] = [...(arc[dateStr] || []), ...done];
+  localStorage.setItem(ARCH_KEY, JSON.stringify(arc));
+  tasks = tasks.filter(t => !t.done);
+  save();
+}
+
+function midnightCheck() {
+  const d = new Date();
+  if (d.getHours() === 0 && d.getMinutes() === 0) {
+    const yd = new Date(d - 86400000);
+    archiveDone(`${yd.getFullYear()}-${p2(yd.getMonth()+1)}-${p2(yd.getDate())}`);
+    localStorage.setItem(LAST_D_KEY, todayStr());
+  }
+  tickDate();
+}
+
+// ── NOTIFICATIONS ──
+function askNotifyPerm() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function checkDeadlines() {
+  const now = Date.now();
+  let changed = false;
+  tasks.forEach(t => {
+    if (t.done || !t.due || (t.q !== 1 && t.q !== 2)) return;
+    const diff = new Date(t.due).getTime() - now;
+    if (diff > 0 && diff <= 3600000 && !t.n60) {
+      t.n60 = true; changed = true;
+      notify('⏰ 1小时后截止', t.title);
+    }
+    if (diff > 0 && diff <= 600000 && !t.n10) {
+      t.n10 = true; changed = true;
+      notify('🔴 10分钟后截止！', t.title);
+    }
+  });
+  if (changed) save();
+}
+
+function notify(title, body) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body });
+  }
+  showToast(title, body);
+  if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+}
+
+function showToast(t, b) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<div class="toast-t">${esc(t)}</div><div class="toast-b">${esc(b)}</div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+// ── RENDER ──
+function renderAll() {
+  for (let q = 1; q <= 4; q++) renderQ(q);
+  if (zoomQ) renderZoomTasks(zoomQ);
+}
+
+function renderQ(q) {
+  document.getElementById(`t${q}`).innerHTML =
+    tasks.filter(t => t.q === q).map(cardHTML).join('');
+}
+
+function cardHTML(t) {
+  const dueH = t.due ? dueBadge(t.due) : '';
+  const descH = t.desc ? `<div class="task-desc">${esc(t.desc)}</div>` : '';
+  return `
+    <div class="task-card${t.done?' completed':''}"
+         draggable="true"
+         ondragstart="dStart(event,'${t.id}')"
+         ondragend="dEnd(event)"
+         onclick="stopProp(event)">
+      <div class="task-top">
+        <div class="task-check${t.done?' checked':''}" onclick="toggle('${t.id}')"></div>
+        <div class="task-title" ondblclick="openEdit('${t.id}')">${esc(t.title)}</div>
+        <button class="task-del" onclick="del('${t.id}')">×</button>
+      </div>
+      ${descH}${dueH}
+    </div>`;
+}
+
+function dueBadge(due) {
+  const diff = new Date(due).getTime() - Date.now();
+  const h = 3600000, d = 86400000;
+  let cls = diff < 0 ? 'over' : diff < h ? 'now' : diff < d ? 'soon' : 'ok';
+  return `<div class="task-due ${cls}">📅 ${fmtDue(due)}</div>`;
+}
+
+function fmtDue(due) {
+  const d = new Date(due), now = new Date();
+  const t = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  if (d.toDateString() === now.toDateString()) return `今天 ${t}`;
+  const tm = new Date(now); tm.setDate(now.getDate()+1);
+  if (d.toDateString() === tm.toDateString()) return `明天 ${t}`;
+  return `${d.getMonth()+1}/${d.getDate()} ${t}`;
+}
+
+// ── TASK CRUD ──
+let addQ = 1;
+
+function openAdd(q) {
+  addQ = q; editId = null;
+  document.getElementById('addTitle').textContent = '添加任务';
+  document.getElementById('fTitle').value = '';
+  document.getElementById('fDesc').value = '';
+  document.getElementById('fDue').value = '';
+  document.getElementById('fQ').value = q;
+  document.getElementById('addOverlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('fTitle').focus(), 80);
+}
+
+function openEdit(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  editId = id;
+  document.getElementById('addTitle').textContent = '编辑任务';
+  document.getElementById('fTitle').value = t.title;
+  document.getElementById('fDesc').value = t.desc || '';
+  document.getElementById('fDue').value = t.due ? t.due.slice(0,16) : '';
+  document.getElementById('fQ').value = t.q;
+  document.getElementById('addOverlay').style.display = 'flex';
+}
+
+function closeAdd() {
+  document.getElementById('addOverlay').style.display = 'none';
+  editId = null;
+}
+
+function saveTask() {
+  const title = document.getElementById('fTitle').value.trim();
+  if (!title) { document.getElementById('fTitle').focus(); return; }
+  const desc = document.getElementById('fDesc').value.trim();
+  const due  = document.getElementById('fDue').value || null;
+  const q    = parseInt(document.getElementById('fQ').value);
+
+  if (editId) {
+    const t = tasks.find(x => x.id === editId);
+    if (t) Object.assign(t, { title, desc, due, q, n60: false, n10: false });
+  } else {
+    tasks.push({ id: uid(), title, desc, due, q, done: false, n60: false, n10: false, at: new Date().toISOString() });
+  }
+  save(); renderAll(); closeAdd();
+}
+
+function toggle(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  t.done = !t.done;
+  t.doneAt = t.done ? new Date().toISOString() : null;
+  save(); renderAll();
+}
+
+function del(id) {
+  tasks = tasks.filter(x => x.id !== id);
+  save(); renderAll();
+}
+
+function save() { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); }
+
+// ── DRAG & DROP ──
+function dStart(e, id) {
+  dragId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => e.target.classList.add('dragging'), 0);
+}
+function dEnd(e) { e.target.classList.remove('dragging'); dragId = null; }
+function dragOver(e, q) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; document.getElementById(`q${q}`).classList.add('drag-over'); }
+function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function drop(e, q) {
+  e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+  if (!dragId) return;
+  const t = tasks.find(x => x.id === dragId);
+  if (t && t.q !== q) { t.q = q; save(); renderAll(); }
+}
+
+// ── ZOOM ──
+function openZoom(q) {
+  zoomQ = q;
+  const m = QMETA[q];
+  document.getElementById('zLabel').innerHTML =
+    `<div class="q-dot" style="background:${m.color};box-shadow:0 0 5px ${m.color}"></div><span style="color:${m.color}">${m.label}</span>`;
+  document.getElementById('zTagline').textContent = m.tag;
+  document.getElementById('zAddBtn').onclick = () => { closeZoom(); openAdd(q); };
+  renderZoomTasks(q);
+  document.getElementById('zoomOverlay').style.display = 'flex';
+}
+
+function renderZoomTasks(q) {
+  const qt = tasks.filter(t => t.q === q);
+  document.getElementById('zTasks').innerHTML = qt.length
+    ? qt.map(cardHTML).join('')
+    : `<div class="zoom-empty">暂无任务</div>`;
+}
+
+function closeZoom() { document.getElementById('zoomOverlay').style.display = 'none'; zoomQ = null; }
+
+// ── HISTORY ──
+document.getElementById('histBtn').onclick = openHist;
+
+function openHist() {
+  const arc = JSON.parse(localStorage.getItem(ARCH_KEY) || '{}');
+  const dates = Object.keys(arc).sort((a,b) => b.localeCompare(a));
+  const body = document.getElementById('histBody');
+
+  if (!dates.length) {
+    body.innerHTML = `<div class="hist-empty">暂无归档记录<br><span style="font-size:11px;opacity:.5">完成任务后次日自动归档</span></div>`;
+  } else {
+    const qn = {1:'重要·紧急',2:'重要·不紧急',3:'不重要·紧急',4:'不重要·不紧急'};
+    body.innerHTML = dates.map(date => {
+      const items = arc[date];
+      const d = new Date(date);
+      const label = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 · 完成 ${items.length} 项`;
+      return `
+        <div class="hist-day">
+          <div class="hist-day-label">${label}</div>
+          ${items.map(t => `
+            <div class="hist-item">
+              <div class="hist-item-title">✓ ${esc(t.title)}</div>
+              <div class="hist-item-meta">${qn[t.q]||''}${t.due?' · 截止 '+fmtDue(t.due):''}</div>
+            </div>`).join('')}
+        </div>`;
+    }).join('');
+  }
+  document.getElementById('histOverlay').style.display = 'flex';
+}
+
+function closeHist() { document.getElementById('histOverlay').style.display = 'none'; }
+
+// ── UTILS ──
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function p2(n) { return String(n).padStart(2,'0'); }
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function stopProp(e) { e.stopPropagation(); }
+
+// quadrant click → zoom (desktop only, click on empty area)
+document.querySelectorAll('.quadrant').forEach((el, i) => {
+  el.addEventListener('click', (e) => {
+    if (window.innerWidth > 640 && e.target === el) openZoom(i+1);
+  });
+});
+
+// keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeAdd(); closeZoom(); closeHist(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (document.getElementById('addOverlay').style.display !== 'none') saveTask();
+  }
+});
+
+init();
+</script>
+</body>
+</html>
