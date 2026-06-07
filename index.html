@@ -254,6 +254,27 @@
       cursor: pointer; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s;
     }
     .q-expand:hover { border-color: var(--gold); color: var(--gold); }
+
+    /* sync */
+    .sync-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .sync-dot.ok     { background: #4caf50; box-shadow: 0 0 5px #4caf50; }
+    .sync-dot.ing    { background: var(--gold); box-shadow: 0 0 5px var(--gold); animation: pulse 1s infinite; }
+    .sync-dot.err    { background: #f06060; box-shadow: 0 0 5px #f06060; }
+    .sync-dot.off    { background: #444; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .sync-btn {
+      background: none; border: none; color: var(--text-dim); cursor: pointer;
+      font-size: 15px; padding: 4px; transition: color 0.2s; line-height: 1;
+    }
+    .sync-btn:hover { color: var(--gold); }
+
+    /* setup modal */
+    .setup-modal { max-width: 400px; }
+    .setup-note { font-size: 11px; color: var(--text-dim); line-height: 1.6; margin-bottom: 16px; padding: 10px 12px; background: rgba(201,168,76,0.06); border-radius: 8px; border-left: 2px solid var(--gold-dark); }
   </style>
 </head>
 <body>
@@ -263,7 +284,11 @@
     <div class="header-title">四 象 限</div>
     <div class="header-date" id="hDate"></div>
   </div>
-  <button class="history-btn" id="histBtn">历史记录</button>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div id="syncDot" class="sync-dot off" title="同步状态"></div>
+    <button class="sync-btn" id="syncSetBtn" title="同步设置">⚙</button>
+    <button class="history-btn" id="histBtn">历史记录</button>
+  </div>
 </div>
 
 <div class="grid-wrapper" style="flex:1;min-height:0;display:flex;flex-direction:column">
@@ -385,6 +410,35 @@
   </div>
 </div>
 
+<!-- Sync Setup Modal -->
+<div class="overlay" id="setupOverlay" style="display:none" onclick="closeSetup()">
+  <div class="modal setup-modal" onclick="stopProp(event)">
+    <div class="modal-title">云同步设置</div>
+    <div class="setup-note">
+      密钥只存在你的浏览器里，不会上传到 GitHub。<br>
+      每台设备首次使用时输入一次即可。
+    </div>
+    <div class="form-group">
+      <label class="form-label">JSONBin X-Master-Key</label>
+      <input class="form-input" id="fApiKey" placeholder="$2a$10$..." autocomplete="off">
+    </div>
+    <div id="setupBinInfo" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Bin ID（已自动生成）</label>
+        <input class="form-input" id="fBinId" placeholder="留空将自动创建" autocomplete="off">
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:16px">
+      已有 Bin ID？填入后点保存即可连接同一份数据。
+      <span style="cursor:pointer;color:var(--gold);text-decoration:underline" onclick="toggleBinInput()">手动填写 Bin ID</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeSetup()">取消</button>
+      <button class="btn-primary" onclick="saveSetup()">保存并同步</button>
+    </div>
+  </div>
+</div>
+
 <!-- History Modal -->
 <div class="overlay" id="histOverlay" style="display:none" onclick="closeHist()">
   <div class="hist-modal" onclick="stopProp(event)">
@@ -425,6 +479,7 @@ function init() {
   setInterval(checkDeadlines, 60000);
   setInterval(midnightCheck, 60000);
   checkDeadlines();
+  syncPull();
 }
 
 function tickDate() {
@@ -613,7 +668,141 @@ function del(id) {
   save(); renderAll();
 }
 
-function save() { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); }
+function save() {
+  localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+  syncPush();
+}
+
+// ── JSONBIN SYNC ──
+const BIN_KEY     = 'sz4_binid';
+const APIKEY_KEY  = 'sz4_apikey';
+let syncTimer = null;
+
+function getSyncCfg() {
+  return {
+    key:   localStorage.getItem(APIKEY_KEY) || '',
+    binId: localStorage.getItem(BIN_KEY) || '',
+  };
+}
+
+function setSyncDot(state) {
+  const d = document.getElementById('syncDot');
+  d.className = `sync-dot ${state}`;
+}
+
+function syncPush() {
+  const { key, binId } = getSyncCfg();
+  if (!key || !binId) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    setSyncDot('ing');
+    try {
+      const data = {
+        tasks,
+        archive: JSON.parse(localStorage.getItem(ARCH_KEY) || '{}'),
+        lastDate: localStorage.getItem(LAST_D_KEY) || '',
+        updatedAt: new Date().toISOString(),
+      };
+      await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': key },
+        body: JSON.stringify(data),
+      });
+      setSyncDot('ok');
+    } catch { setSyncDot('err'); }
+  }, 1500);
+}
+
+async function syncPull() {
+  const { key, binId } = getSyncCfg();
+  if (!key || !binId) { setSyncDot('off'); return; }
+  setSyncDot('ing');
+  try {
+    const r = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+      headers: { 'X-Master-Key': key },
+    });
+    if (!r.ok) throw new Error();
+    const { record } = await r.json();
+    // use remote if newer
+    const localUpdated = localStorage.getItem('sz4_updatedAt') || '';
+    if (!localUpdated || record.updatedAt > localUpdated) {
+      tasks = record.tasks || [];
+      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+      if (record.archive) localStorage.setItem(ARCH_KEY, JSON.stringify(record.archive));
+      if (record.lastDate) localStorage.setItem(LAST_D_KEY, record.lastDate);
+      localStorage.setItem('sz4_updatedAt', record.updatedAt);
+      renderAll();
+    }
+    setSyncDot('ok');
+  } catch { setSyncDot('err'); }
+}
+
+async function createBin(key) {
+  const data = {
+    tasks: [],
+    archive: {},
+    lastDate: todayStr(),
+    updatedAt: new Date().toISOString(),
+  };
+  const r = await fetch('https://api.jsonbin.io/v3/b', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Master-Key': key,
+      'X-Bin-Name': 'sxj-tasks',
+      'X-Bin-Private': 'true',
+    },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) throw new Error('创建失败');
+  const j = await r.json();
+  return j.metadata.id;
+}
+
+// setup modal
+function openSetup() {
+  const { key, binId } = getSyncCfg();
+  document.getElementById('fApiKey').value = key;
+  document.getElementById('fBinId').value = binId;
+  if (binId) document.getElementById('setupBinInfo').style.display = 'block';
+  document.getElementById('setupOverlay').style.display = 'flex';
+}
+function closeSetup() { document.getElementById('setupOverlay').style.display = 'none'; }
+function toggleBinInput() {
+  const el = document.getElementById('setupBinInfo');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveSetup() {
+  const key   = document.getElementById('fApiKey').value.trim();
+  const binId = document.getElementById('fBinId').value.trim();
+  if (!key) { document.getElementById('fApiKey').focus(); return; }
+
+  const btn = document.querySelector('#setupOverlay .btn-primary');
+  btn.textContent = '连接中…'; btn.disabled = true;
+  setSyncDot('ing');
+
+  try {
+    let id = binId;
+    if (!id) {
+      id = await createBin(key);
+    }
+    localStorage.setItem(APIKEY_KEY, key);
+    localStorage.setItem(BIN_KEY, id);
+    document.getElementById('fBinId').value = id;
+    document.getElementById('setupBinInfo').style.display = 'block';
+    closeSetup();
+    await syncPull();
+    showToast('✓ 同步已连接', `Bin ID: ${id}`);
+  } catch (e) {
+    setSyncDot('err');
+    showToast('✗ 连接失败', '请检查 Key 是否正确');
+  } finally {
+    btn.textContent = '保存并同步'; btn.disabled = false;
+  }
+}
+
+document.getElementById('syncSetBtn').onclick = openSetup;
 
 // ── DRAG & DROP ──
 function dStart(e, id) {
